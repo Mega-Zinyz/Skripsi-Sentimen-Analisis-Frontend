@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http'; // ⬅️ ADD HttpHeaders here
 import { BehaviorSubject, Observable, of } from 'rxjs';
 import { map, catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
@@ -24,6 +24,12 @@ export class AuthService {
   private apiUrl = environment.apiUrl.replace('/api', ''); // Remove /api suffix since auth service adds endpoints directly
   private currentUserSubject: BehaviorSubject<User | null>;
   public currentUser: Observable<User | null>;
+
+  // 1. Define the Ngrok Header and JSON Content Type centrally
+  private ngrokHeaders = new HttpHeaders({
+    'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': 'true' 
+  });
 
   constructor(private http: HttpClient) {
     const storedUser = localStorage.getItem('currentUser');
@@ -51,11 +57,11 @@ export class AuthService {
   }
 
   register(username: string, email: string, password: string): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.apiUrl}/api/auth/register`, {
-      username,
-      email,
-      password
-    }).pipe(
+    return this.http.post<AuthResponse>(
+      `${this.apiUrl}/api/auth/register`, 
+      { username, email, password },
+      { headers: this.ngrokHeaders } // ⬅️ 2. Pass the Ngrok headers here
+    ).pipe(
       map(response => {
         // Store user details and token in local storage
         localStorage.setItem('currentUser', JSON.stringify(response.user));
@@ -67,10 +73,11 @@ export class AuthService {
   }
 
   login(username: string, password: string): Observable<AuthResponse> {
-    return this.http.post<AuthResponse>(`${this.apiUrl}/api/auth/login`, {
-      username,
-      password
-    }).pipe(
+    return this.http.post<AuthResponse>(
+      `${this.apiUrl}/api/auth/login`, 
+      { username, password },
+      { headers: this.ngrokHeaders } // ⬅️ 3. Pass the Ngrok headers here
+    ).pipe(
       map(response => {
         // Store user details and token in local storage
         localStorage.setItem('currentUser', JSON.stringify(response.user));
@@ -96,9 +103,16 @@ export class AuthService {
       clearStorage();
       return of({ success: true });
     }
+
+    // Reuse the Ngrok headers, but also include Authorization
+    const logoutHeaders = new HttpHeaders({
+      'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': 'true', // ⬅️ Ngrok header
+      'Authorization': `Bearer ${token}` 
+    });
     
     return this.http.post(`${this.apiUrl}/api/auth/logout`, {}, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: logoutHeaders // ⬅️ Use combined headers for logout
     }).pipe(
       map(response => {
         clearStorage();
@@ -114,7 +128,15 @@ export class AuthService {
   }
 
   getProfile(): Observable<{ user: User }> {
-    return this.http.get<{ user: User }>(`${this.apiUrl}/api/auth/profile`);
+    // Note: You may need to update this to include both the Ngrok header and Auth token
+    const profileHeaders = new HttpHeaders({
+      'ngrok-skip-browser-warning': 'true',
+      ...this.getAuthHeaders() // Merge existing auth headers
+    });
+    
+    return this.http.get<{ user: User }>(`${this.apiUrl}/api/auth/profile`, { 
+        headers: profileHeaders 
+    });
   }
 
   getToken(): string | null {
